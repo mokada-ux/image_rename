@@ -238,4 +238,25 @@ if uploaded_files:
 
         # --- ループ終了後: Zipボタンの更新 ---
         # 全ての処理が終わった(あるいはキャッシュ表示が終わった)時点でZipボタンを出す
-        if
+        if st.session_state.results:
+            zip_data = create_zip(st.session_state.results)
+            
+            # 上のZipボタン
+            top_zip_area.download_button(
+                "📦 まとめてZipダウンロード (上)",
+                data=zip_data,
+                file_name="images_renamed.zip",
+                mime="application/zip",
+                key="zip_top"
+            )
+            
+            # 下のZipボタン
+            bottom_zip_area.download_button(
+                "📦 まとめてZipダウンロード (下)",
+                data=zip_data,
+                file_name="images_renamed.zip",
+                mime="application/zip",
+                key="zip_bottom"
+            )
+            
+        st.success("すべての表示が完了しました。")
