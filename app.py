@@ -141,7 +141,7 @@ with st.sidebar:
     st.header("設定")
     selected_genre = st.selectbox(
         "ジャンルを選択",
-        ["ダイエット", "育毛", "美容", "ビジネス", "介護", "その他"],
+        ["ダイエット", "育毛・ヘアケア", "美容", "健康", "その他"],
         index=0
     )
     if st.button("リセット / 最初から"):
