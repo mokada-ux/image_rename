@@ -8,7 +8,7 @@ import re
 
 # --- ページ設定 ---
 st.set_page_config(page_title="画像リネームツール Pro+", layout="wide")
-st.title("🏷️ 画像リネームツール Pro+ (編集維持版)")
+st.title("🏷️ 画像リネームツール Pro+")
 
 # --- セッション状態の初期化 ---
 if 'results' not in st.session_state:
