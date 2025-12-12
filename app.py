@@ -5,10 +5,9 @@ import zipfile
 
 # --- ページ設定 ---
 st.set_page_config(page_title="一括リネームツール", layout="wide")
-st.title("🏷️ 画像一括リネームツール (手動設定版)")
+st.title("🏷️ 画像一括リネームツール (ルールベース)")
 
 # --- セッション状態の初期化 ---
-# 画像データと編集後の名前を保持する
 if 'results' not in st.session_state:
     st.session_state.results = {} # {index: data}
 
@@ -16,23 +15,20 @@ if 'results' not in st.session_state:
 def create_zip(results_dict):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zf:
-        # index順に格納
         for idx in sorted(results_dict.keys()):
             item = results_dict[idx]
             fname = f"{item['current_name']}.{item['ext']}"
-            
-            # 画像データをバイト列に
             img_byte_arr = io.BytesIO()
             item['image'].save(img_byte_arr, format=item['save_format'])
             zf.writestr(fname, img_byte_arr.getvalue())
     return zip_buffer.getvalue()
 
-# --- コールバック: 名前変更を保存 ---
+# --- コールバック: 名前変更を即座に保存 ---
 def update_name(index):
     new_val = st.session_state[f"input_{index}"]
     st.session_state.results[index]['current_name'] = new_val
 
-# --- 行描画関数 ---
+# --- 表示用の関数 ---
 def render_row(index, item):
     with st.container():
         col1, col2, col3 = st.columns([1, 2, 1])
@@ -46,12 +42,11 @@ def render_row(index, item):
                 on_change=update_name,
                 args=(index,)
             )
-            st.caption(f"元ファイル: {item['original_name']}")
+            st.caption(f"元ファイル名: {item['original_name']}")
         with col3:
             final_fname = f"{item['current_name']}.{item['ext']}"
             img_byte_arr = io.BytesIO()
             item['image'].save(img_byte_arr, format=item['save_format'])
-            
             st.write("") # レイアウト調整
             st.download_button(
                 "⬇️ 保存",
@@ -65,36 +60,26 @@ def render_row(index, item):
 # --- UI構築 ---
 
 with st.sidebar:
-    st.header("共通設定")
+    st.header("命名ルール設定")
     
-    # 1. ジャンル
-    selected_genre = st.selectbox(
-        "① ジャンル",
-        ["ダイエット", "育毛・ヘアケア", "美容", "健康", "その他"],
+    # ① 年代 (選択式)
+    setting_age = st.selectbox(
+        "年代",
+        ["若年", "中年", "高齢"],
         index=0
     )
     
-    # 2. 年代 (仕様変更①)
-    selected_age = st.selectbox(
-        "② 年代",
-        ["若年", "中年", "高齢"],
-        index=1
+    # ③ 属性 (テキスト入力)
+    setting_attr = st.text_input(
+        "属性 (例: 笑顔の女性)",
+        value="人物"
     )
     
-    # 3. 属性テキスト (仕様変更③)
-    input_attr = st.text_input(
-        "③ 属性 (テキスト入力)",
-        value="女性_笑顔",
-        placeholder="例: 男性_悩み"
-    )
-    
-    # 4. 開始No (仕様変更②)
-    start_no = st.number_input(
-        "④ 開始No",
-        min_value=1,
-        value=1,
-        step=1,
-        help="ここに入力した数字から連番が始まります"
+    # ② No (連番設定)
+    setting_no = st.text_input(
+        "開始No (例: 001)",
+        value="001",
+        help="ここで入力した桁数に合わせて連番が振られます（001なら001, 002...）"
     )
 
     st.markdown("---")
@@ -103,8 +88,10 @@ with st.sidebar:
         st.rerun()
 
 st.write("##### 画像アップロード")
+st.caption("設定したルールに基づいて一括で名前を生成します。")
+
 uploaded_files = st.file_uploader(
-    "画像をアップロードしてください", 
+    "画像を選択", 
     type=["jpg", "jpeg", "png"], 
     accept_multiple_files=True
 )
@@ -116,66 +103,76 @@ if st.session_state.results:
     for i in sorted(st.session_state.results.keys()):
         render_row(i, st.session_state.results[i])
 
-# --- リネーム実行処理 ---
+# --- 実行ロジック ---
 if uploaded_files:
-    # 未処理のファイルがあるかチェック
+    # まだ処理していないファイル、または再実行ボタンが押された場合
+    
+    # 未処理のインデックスを探す
     processed_ids = st.session_state.results.keys()
     unprocessed_indices = [i for i in range(len(uploaded_files)) if i not in processed_ids]
     
-    if unprocessed_indices:
-        btn_label = "一括リネーム実行"
-    else:
-        btn_label = "リネーム実行 (完了済み)"
-
+    btn_label = "命名ルールを適用して表示"
+    
+    # 実行ボタン
     if st.button(btn_label, type="primary"):
-        if unprocessed_indices:
-            # プログレスバー（AIがないので一瞬ですが、枚数が多い時のために設置）
-            progress_bar = st.progress(0)
-            
-            for idx, i in enumerate(unprocessed_indices):
-                uploaded_file = uploaded_files[i]
-                try:
-                    image = Image.open(uploaded_file).convert('RGB')
-                    
-                    # --- 命名ロジック ---
-                    # 連番の計算: 開始No + (現在のループ位置)
-                    # 全体の中での通し番号にするため、unprocessedリスト内の順序を加算
-                    current_no = start_no + idx
-                    
-                    # 属性テキストが空の場合はアンダーバーが重ならないように調整
-                    attr_part = f"_{input_attr}" if input_attr else ""
-                    
-                    # フォーマット: ジャンル_年代_属性_No
-                    # Noは2桁埋め (01, 02...) にしておくと並び順が綺麗です
-                    # 不要なら `{current_no}` に変更してください
-                    base_name = f"{selected_genre}_{selected_age}{attr_part}_{current_no:02}"
-                    
-                    # 拡張子処理
-                    original_ext = uploaded_file.name.split('.')[-1].lower()
-                    if original_ext == 'jpeg': original_ext = 'jpg'
-                    save_format = 'PNG' if original_ext == 'png' else 'JPEG'
-                    mime = "image/png" if original_ext == 'png' else "image/jpeg"
+        
+        # 連番の桁数と開始値を計算
+        try:
+            start_num = int(setting_no)
+            padding = len(setting_no) # 入力された桁数 (例: "001"なら3桁)
+        except ValueError:
+            start_num = 1
+            padding = 3
 
-                    # データ保存
-                    item_data = {
-                        "image": image,
-                        "original_name": uploaded_file.name,
-                        "current_name": base_name,
-                        "ext": original_ext,
-                        "save_format": save_format,
-                        "mime": mime
-                    }
-                    st.session_state.results[i] = item_data
-                    
-                    # 即時表示
-                    render_row(i, item_data)
-
-                except Exception as e:
-                    st.error(f"{uploaded_file.name} でエラー: {e}")
+        # プログレスバー（軽いので一瞬ですが一応）
+        progress_bar = st.progress(0)
+        
+        # 全ファイルをループ (未処理のものだけ追加するロジック)
+        # ※もし設定を変えて「全画像やり直し」したい場合はリセットボタンを押してもらう運用
+        
+        target_indices = unprocessed_indices if unprocessed_indices else range(len(uploaded_files))
+        
+        # すべて再生成する場合の考慮:
+        # 既にリストにあっても、ボタンを押したということは「今の設定で上書きしたい」可能性が高いので
+        # ここではアップロードされている全ファイルを対象に処理します。
+        
+        for i, uploaded_file in enumerate(uploaded_files):
+            try:
+                # 連番生成 (開始値 + インデックス)
+                current_num = start_num + i
+                num_str = str(current_num).zfill(padding)
                 
-                progress_bar.progress((idx + 1) / len(unprocessed_indices))
+                # ファイル名生成: 年代_属性_No
+                new_base_name = f"{setting_age}_{setting_attr}_{num_str}"
+                
+                # 画像情報の取得
+                image = Image.open(uploaded_file).convert('RGB')
+                original_ext = uploaded_file.name.split('.')[-1].lower()
+                if original_ext == 'jpeg': original_ext = 'jpg'
+                save_format = 'PNG' if original_ext == 'png' else 'JPEG'
+                mime = "image/png" if original_ext == 'png' else "image/jpeg"
+
+                # データ作成
+                item_data = {
+                    "image": image,
+                    "original_name": uploaded_file.name,
+                    "current_name": new_base_name,
+                    "ext": original_ext,
+                    "save_format": save_format,
+                    "mime": mime,
+                    "caption_debug": "Rule Based"
+                }
+                
+                # Session Stateに保存 (上書き)
+                st.session_state.results[i] = item_data
+                
+            except Exception as e:
+                st.error(f"{uploaded_file.name} でエラー: {e}")
             
-            st.success("完了しました！")
+            progress_bar.progress((i + 1) / len(uploaded_files))
+            
+        st.success("適用完了！")
+        st.rerun() # 描画更新のためにリロード
 
 # --- Zipボタン ---
 if st.session_state.results:
@@ -184,7 +181,7 @@ if st.session_state.results:
     top_zip_area.download_button(
         "📦 Zipダウンロード (上)",
         data=zip_data,
-        file_name="renamed_images.zip",
+        file_name="images_renamed.zip",
         mime="application/zip",
         key="zip_top"
     )
@@ -192,7 +189,7 @@ if st.session_state.results:
     st.download_button(
         "📦 Zipダウンロード (下)",
         data=zip_data,
-        file_name="renamed_images.zip",
+        file_name="images_renamed.zip",
         mime="application/zip",
         key="zip_bottom"
     )
