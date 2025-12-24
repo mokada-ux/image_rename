@@ -96,7 +96,7 @@ with st.sidebar:
     
     st.info(f"イメージ: {setting_age}_{setting_no}_{setting_status if setting_status else '状態'}.jpg")
 
-    # --- 更新ボタン (New!) ---
+    # --- 更新ボタン (修正箇所) ---
     st.markdown("---")
     st.write("**ルールの再適用**")
     if st.button("🔄 名前を更新・連番振り直し", type="primary", help="現在リストにある画像に対して、上に入力されたルールを適用し直します。"):
@@ -109,8 +109,8 @@ with st.sidebar:
             padding = 3
         
         # 現在残っている画像をソートしてループ
-        # (削除された画像の分を詰めて連番を振るため enumerate を使う)
         current_keys = sorted(st.session_state.results.keys())
+        
         for i, key in enumerate(current_keys):
             item = st.session_state.results[key]
             
@@ -121,8 +121,14 @@ with st.sidebar:
             # 新しい名前を生成
             new_base_name = f"{setting_age}_{num_str}_{setting_status}"
             
-            # 更新
+            # 1. データの更新
             item['current_name'] = new_base_name
+            
+            # 2. ★ここが修正点★
+            # 入力ボックス(Widget)のキャッシュも強制的に書き換える
+            # これをしないと画面上の文字が変わらない
+            if f"input_{key}" in st.session_state:
+                st.session_state[f"input_{key}"] = new_base_name
             
         st.success("更新しました！")
         st.rerun()
@@ -145,7 +151,6 @@ top_zip_area = st.empty()
 
 # リスト表示 (常に表示)
 if st.session_state.results:
-    # 削除操作等でキーが飛び飛びになっている可能性があるためsortedで順序保証
     for i in sorted(st.session_state.results.keys()):
         render_row(i, st.session_state.results[i])
 else:
@@ -153,20 +158,10 @@ else:
 
 # --- 新規アップロード時の処理 ---
 if uploaded_files:
-    # まだ辞書に登録されていないID（index）を探す
-    # (アップロードウィジェットは全ファイルを返すため、既存と新規を区別する必要がある)
-    
-    # 今アップロードされているファイルに対応する一時的なIDリストを作成
-    # 単純なindexだと削除後にズレるため、ファイル名等で管理したいが、
-    # Streamlitの仕様上、index管理で「未登録のもの」だけ処理するのが安全
-    
     existing_ids = st.session_state.results.keys()
-    
-    # 新規ファイルのindexリスト
     new_indices = [i for i in range(len(uploaded_files)) if i not in existing_ids]
     
     if new_indices:
-        # 新規ファイルがある場合のみボタンを表示
         if st.button(f"新規画像 {len(new_indices)}枚 を追加・適用"):
             try:
                 start_num = int(setting_no)
@@ -175,19 +170,14 @@ if uploaded_files:
                 start_num = 1
                 padding = 3
 
-            # 既存の最大連番数を考慮するか、設定値からスタートするか
-            # ここでは「設定値 + 現在の枚数」からスタートするように調整すると親切
-            # (例: 既に5枚あって005まで使っていたら、次は006から)
             current_count = len(st.session_state.results)
             effective_start_num = start_num + current_count
 
             for i_offset, idx in enumerate(new_indices):
                 uploaded_file = uploaded_files[idx]
                 try:
-                    # 連番生成 (既存枚数 + 追加分のインデックス)
                     current_num = effective_start_num + i_offset
                     num_str = str(current_num).zfill(padding)
-                    
                     new_base_name = f"{setting_age}_{num_str}_{setting_status}"
                     
                     image = Image.open(uploaded_file).convert('RGB')
